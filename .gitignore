@@ -5,3 +5,6 @@ raylib-master
 **.sln
 **.vcxproj
 **.vcxproj.**
+**.DS_Store
+**.xcworkspace
+**.xcodeproj
