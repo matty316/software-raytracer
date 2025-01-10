@@ -11,6 +11,7 @@ typedef struct Sphere {
     float radius;
     Color color;
     float specular;
+    float reflective;
 } Sphere;
 
 typedef struct Intersection {
@@ -37,21 +38,23 @@ struct Light {
 std::array<Light, 3> lights;
 
 std::array<Sphere, 4> spheres{ {
-    {.center = {.x = 0.0f, .y = -1.0f, .z = 3.0f}, .radius = 1.0f, .color = RED, .specular = 500.0f },
-    {.center = {.x = 2.0f, .y = 0.0f, .z = 4.0f}, .radius = 1.0f, .color = BLUE, .specular = 500.0f },
-    {.center = {.x = -2.0f, .y = 0.0f, .z = 4.0f}, .radius = 1.0f, .color = GREEN, .specular = 10.0f },
-    {.center = {.x = 0.0f, .y = -5001.0, .z = 0.0f}, .radius = 5000.0f, .color = YELLOW, .specular = 1000.0f},
+    {.center = {.x = 0.0f, .y = -1.0f, .z = 3.0f}, .radius = 1.0f, .color = RED, .specular = 500.0f, .reflective = 0.2f },
+    {.center = {.x = 2.0f, .y = 0.0f, .z = 4.0f}, .radius = 1.0f, .color = BLUE, .specular = 500.0f, .reflective = 0.3f },
+    {.center = {.x = -2.0f, .y = 0.0f, .z = 4.0f}, .radius = 1.0f, .color = GREEN, .specular = 10.0f, .reflective = 0.4f },
+    {.center = {.x = 0.0f, .y = -5001.0, .z = 0.0f}, .radius = 5000.0f, .color = YELLOW, .specular = 1000.0f, .reflective = 0.5f},
 } };
 
 float projectionPlaneD = 1.0f;
-Vector2 viewportSize = { .x = 1.6f, .y = 0.9f };
+Vector2 viewportSize = { .x = SCREEN_WIDTH / SCREEN_HEIGHT, .y = 1.0f };
 
 void putPixel(int x, int y, Color color);
 Vector3 canvasToViewport(int x, int y);
-Color traceRay(Vector3 origin, Vector3 distance, float min, float max);
+Color traceRay(Vector3 origin, Vector3 distance, float min, float max, int limit);
 Intersection intersectRaySphere(Vector3 origin, Vector3 direction, Sphere sphere);
 SphereIntersection closestIntersection(Vector3 origin, Vector3 direction, float min, float max);
 float computeLighting(Vector3 point, Vector3 normal, Vector3 view, float specular);
+Vector3 reflectRay(Vector3 normal, Vector3 l);
+
 
 int main() {
     run();
@@ -60,7 +63,7 @@ int main() {
 
 
 void run() {
-    InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Hell Yeah");
+    InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Software Raytracing");
 
     SetTargetFPS(60);
     Vector3 origin = { .x = 0.0f, .y = 0.0f, .z = 0.0f };
@@ -85,7 +88,7 @@ void run() {
         for (int x = -SCREEN_WIDTH / 2; x < SCREEN_WIDTH / 2; x++) {
             for (int y = -SCREEN_HEIGHT / 2; y < SCREEN_HEIGHT / 2; y++) {
                 Vector3 direction = canvasToViewport(x, y);
-                Color color = traceRay(origin, direction, 1.0f, FLT_MAX);
+                Color color = traceRay(origin, direction, 1.0f, FLT_MAX, 3);
                 putPixel(x, y, color);
             }
         }
@@ -110,7 +113,7 @@ Vector3 canvasToViewport(int x, int y) {
     return Vector3(x * viewportSize.x / SCREEN_WIDTH, y * viewportSize.y / SCREEN_HEIGHT, projectionPlaneD);
 }
 
-Color traceRay(Vector3 origin, Vector3 direction, float min, float max) {    
+Color traceRay(Vector3 origin, Vector3 direction, float min, float max, int limit) {
     SphereIntersection sphereIntersection = closestIntersection(origin, direction, min, max);
 
     if (sphereIntersection.sphere.radius < 0.0f) {
@@ -144,7 +147,15 @@ Color traceRay(Vector3 origin, Vector3 direction, float min, float max) {
     }
     
     Color newColor{ .r = static_cast<unsigned char>(r), .g = static_cast<unsigned char>(g), .b = static_cast<unsigned char>(b), .a = sphere.color.a };
-    return newColor;
+    
+    float reflective = sphereIntersection.sphere.reflective;
+    if (limit <= 0 || reflective <= 0.0f) {
+        return newColor;
+    }
+    Vector3 reflectionRay = reflectRay(Vector3Negate(direction), normal);
+    Color reflectedColor = traceRay(point, reflectionRay, 0.0001f, FLT_MAX, limit - 1);
+    
+    float rR = Vector3SubtractValue(reflectionRay, -1.0f) * newColor.r + reflectionRay * reflectedColor.r;
 }
 
 Intersection intersectRaySphere(Vector3 origin, Vector3 direction, Sphere sphere) {
@@ -158,7 +169,7 @@ Intersection intersectRaySphere(Vector3 origin, Vector3 direction, Sphere sphere
     if (discriminant < 0) {
         return Intersection{ FLT_MAX, FLT_MAX };
     }
-
+    
     float t1 = (-b + sqrtf(discriminant)) / (2.0f * a);
     float t2 = (-b - sqrtf(discriminant)) / (2.0f * a);
     return Intersection{ t1, t2 };
@@ -197,7 +208,7 @@ float computeLighting(Vector3 point, Vector3 normal, Vector3 view, float specula
             }
             
             if (specular != -1) {
-                Vector3 reflection = normal * 2.0f * Vector3DotProduct(normal, l) - l;
+                Vector3 reflection = reflectRay(normal, l);
                 float rDotV = Vector3DotProduct(reflection, view);
                 if (rDotV > 0.0f) {
                     i += light.intensity * pow(rDotV / (Vector3Length(reflection) * Vector3Length(view)), specular);
@@ -227,4 +238,8 @@ SphereIntersection closestIntersection(Vector3 origin, Vector3 direction, float 
     }
 
     return SphereIntersection{ closestSphere, closestT };
+}
+
+Vector3 reflectRay(Vector3 normal, Vector3 l) {
+    return normal * 2.0f * Vector3DotProduct(normal, l) - l;
 }
