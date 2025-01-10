@@ -9,6 +9,7 @@ typedef struct Sphere {
     Vector3 center;
     float radius;
     Color color;
+    float specular;
 } Sphere;
 
 typedef enum LightType {
@@ -25,10 +26,10 @@ struct Light {
 std::array<Light, 3> lights;
 
 std::array<Sphere, 4> spheres{ {
-    {.center = {.x = 0.0f, .y = -1.0f, .z = 3.0f}, .radius = 1.0f, .color = RED },
-    {.center = {.x = 2.0f, .y = 0.0f, .z = 4.0f}, .radius = 1.0f, .color = BLUE },
-    {.center = {.x = -2.0f, .y = 0.0f, .z = 4.0f}, .radius = 1.0f, .color = GREEN },
-    {.center = {.x = 0.0f, .y = -5001.0, .z = 0.0f}, .radius = 5000.0f, .color = YELLOW},
+    {.center = {.x = 0.0f, .y = -1.0f, .z = 3.0f}, .radius = 1.0f, .color = RED, .specular = 500.0f },
+    {.center = {.x = 2.0f, .y = 0.0f, .z = 4.0f}, .radius = 1.0f, .color = BLUE, .specular = 500.0f },
+    {.center = {.x = -2.0f, .y = 0.0f, .z = 4.0f}, .radius = 1.0f, .color = GREEN, .specular = 10.0f },
+    {.center = {.x = 0.0f, .y = -5001.0, .z = 0.0f}, .radius = 5000.0f, .color = YELLOW, .specular = 1000.0f},
 } };
 
 float projectionPlaneD = 1.0f;
@@ -38,7 +39,7 @@ void putPixel(int x, int y, Color color);
 Vector3 canvasToViewport(int x, int y);
 Color traceRay(Vector3 origin, Vector3 distance, float min, float max);
 Vector2 intersectRaySphere(Vector3 origin, Vector3 distance, Sphere sphere);
-float computeLighting(Vector3 point, Vector3 normal);
+float computeLighting(Vector3 point, Vector3 normal, Vector3 view, float specular);
 
 int main() {
     run();
@@ -120,10 +121,29 @@ Color traceRay(Vector3 origin, Vector3 direction, float min, float max) {
     Vector3 point = origin + (direction * closestT);
     Vector3 normal = point - sphere.center;
     normal = Vector3Normalize(normal);
-    float lighting = computeLighting(point, normal);
+    float lighting = computeLighting(point, normal, Vector3Negate(direction), sphere.specular);
     float r = sphere.color.r * lighting;
     float g = sphere.color.g * lighting;
     float b = sphere.color.b * lighting;
+    if (r > 255.0f) {
+        r = 255.0f;
+    }
+    if (r < 0.0f) {
+        r = 0.0f;
+    }
+    if (g > 255.0f) {
+        g = 255.0f;
+    }
+    if (g < 0.0f) {
+        g = 0.0f;
+    }
+    if (b > 255.0f) {
+        b = 255.0f;
+    }
+    if (b < 0.0f) {
+        b = 0.0f;
+    }
+    
     Color newColor{ .r = static_cast<unsigned char>(r), .g = static_cast<unsigned char>(g), .b = static_cast<unsigned char>(b), .a = sphere.color.a };
     return newColor;
 }
@@ -145,7 +165,7 @@ Vector2 intersectRaySphere(Vector3 origin, Vector3 direction, Sphere sphere) {
     return Vector2(t1, t2);
 }
 
-float computeLighting(Vector3 point, Vector3 normal) {
+float computeLighting(Vector3 point, Vector3 normal, Vector3 view, float specular) {
     float i = 0.0f;
     for (auto light: lights) {
 
@@ -163,9 +183,17 @@ float computeLighting(Vector3 point, Vector3 normal) {
             else {
                 l = light.direction;
             }
-            float nDot1 = Vector3DotProduct(normal, l);
-            if (nDot1 > 0.0f) {
-                i += light.intensity * nDot1 / (Vector3Length(normal) * Vector3Length(l));
+            float nDotl = Vector3DotProduct(normal, l);
+            if (nDotl > 0.0f) {
+                i += light.intensity * nDotl / (Vector3Length(normal) * Vector3Length(l));
+            }
+            
+            if (specular != -1) {
+                Vector3 reflection = normal * 2.0f * Vector3DotProduct(normal, l) - l;
+                float rDotV = Vector3DotProduct(reflection, view);
+                if (rDotV > 0.0f) {
+                    i += light.intensity * pow(rDotV / (Vector3Length(reflection) * Vector3Length(view)), specular);
+                }
             }
             break;
         }
